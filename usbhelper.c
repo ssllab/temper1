@@ -79,6 +79,14 @@ int device_vendor_product_is(libusb_device *device, uint16_t vendor, uint16_t pr
 	return r;
 }
 
+int device_bus_address(libusb_device *device, uint8_t *bus_id, uint8_t *device_id)
+{
+	*bus_id = usb_return(libusb_get_bus_number(device), "device_bus_address: libusb_get_bus_number");
+	*device_id = usb_return(libusb_get_device_address(device), "device_bus_address: libusb_get_device_address");
+	
+	return (bus_id > 0 && device_id > 0);
+}
+
 int driver_to_be_reattached = 0;
 
 int detach_driver(libusb_device_handle *handle, int interface_number)
@@ -115,8 +123,8 @@ int release_interface(libusb_device_handle *handle, int interface_number)
 int restore_driver(libusb_device_handle *handle, int interface_number)
 {
 	int r = 0;
-	if (driver_to_be_reattached) {
-		r = usb_return(libusb_attach_kernel_driver(handle, interface_number), "libusb_attach_kernel_driver");
+	if (driver_to_be_reattached == 1) {
+		r = libusb_attach_kernel_driver(handle, interface_number);
 	}
 	return r;
 }

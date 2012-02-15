@@ -1,6 +1,9 @@
 void iterate_usb(int (is_interesting)(libusb_device *),
 	int (do_process)(libusb_device_handle *));
+
 int device_vendor_product_is(libusb_device *device, uint16_t vendor, uint16_t product);
+int device_bus_address(libusb_device *device, uint8_t *bus_id, uint8_t *device_id);
+
 int detach_driver(libusb_device_handle *handle, int interface_number);
 int set_configuration(libusb_device_handle *handle, int configuration);
 int claim_interface(libusb_device_handle *handle, int interface_number);

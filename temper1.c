@@ -35,7 +35,7 @@ void output_data(uint8_t bus_id, uint8_t device_id, unsigned char *data)
 
 	float c = raw_to_c(bus_id, device_id, data);
 
-	fprintf(stdout, "%s,%f\n", dt, c);
+	fprintf(stdout, "%s,%d,%d,%f\n", dt, bus_id, device_id, c);
 	fflush(stdout);
 }
 
@@ -49,6 +49,8 @@ int use_device_temper1(libusb_device_handle *handle)
 	int r;
 	uint8_t bus_id, device_id;
 	unsigned char data[8];
+	
+	r = device_bus_address(libusb_get_device(handle), &bus_id, &device_id);
 	
 	r = initialise_temper1(handle);
 	if (r >= 0)
