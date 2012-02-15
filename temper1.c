@@ -35,7 +35,8 @@ void output_data(uint8_t bus_id, uint8_t device_id, unsigned char *data)
 
 	float c = raw_to_c(bus_id, device_id, data);
 
-	fprintf(stdout, "%s,%d,%d,%f\n", dt, bus_id, device_id, c);
+//	fprintf(stdout, "%s,%d,%d,%f\n", dt, bus_id, device_id, c);
+	fprintf(stdout, "%s,%f\n", dt, c);
 	fflush(stdout);
 }
 
