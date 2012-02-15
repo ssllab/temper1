@@ -36,7 +36,7 @@ void iterate_usb(int (is_interesting)(libusb_device *),
 	}
 	
 	#ifdef DEBUG
-	usb_return(libusb_set_debug(ctx, 3));
+	libusb_set_debug(ctx, 2);
 	#endif
 	
 	ssize_t cnt = usb_return(libusb_get_device_list(ctx, &list), "libusb_get_device_list");

@@ -1,6 +1,6 @@
 # Makefile for temperature reader
 CC=gcc
-CFLAGS=-Wall 
+CFLAGS=-Wall -DDEBUG
 
 all: temper1
 
