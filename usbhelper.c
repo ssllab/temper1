@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <string.h>
-#include <libusb-1.0/libusb.h>
+#include <usb.h>
 
 #define CONTROL_TIMEOUT 5000
 #define READ_TIMEOUT 5000
 
-int open_and_callback(libusb_device *device, int (action)(libusb_device_handle *));
+int open_and_callback(struct usb_device *device, int (action)(struct usb_dev_handle *));
 
 void error(char *info, int retcode)
 {
@@ -21,144 +21,121 @@ int usb_return(int retcode, char *info)
 	return retcode;
 }
 
-void iterate_usb(int (is_interesting)(libusb_device *),
-	int (do_process)(libusb_device_handle *))
+void iterate_usb(int (is_interesting)(struct usb_device *),
+	int (do_process)(struct usb_dev_handle *))
 {
-	// discover devices
-	libusb_context *ctx = NULL;
-	libusb_device **list;
-
-	int r;
-
-	r = usb_return(libusb_init(&ctx), "libusb_init");
-	if (r < 0) {
-		return;
-	}
+	usb_init();
+	usb_find_busses();
+	usb_find_devices();
 	
 	#ifdef DEBUG
-	libusb_set_debug(ctx, 2);
+	usb_set_debug(2);
 	#endif
 	
-	ssize_t cnt = usb_return(libusb_get_device_list(ctx, &list), "libusb_get_device_list");
-	ssize_t i = 0;
-
-	for (i = 0; i < cnt; i++) {
-			libusb_device *device = list[i];
-			if (is_interesting(device)) {
-				open_and_callback(device, do_process);
+	struct usb_bus *bus;
+	struct usb_device *dev;
+ 
+	for (bus = usb_busses; bus; bus = bus->next) {
+		for (dev = bus->devices; dev; dev = dev->next) {
+			if (is_interesting(dev)) {
+				open_and_callback(dev, do_process);
 			}
+		}
 	}
-	
-	libusb_free_device_list(list, 1);
-	libusb_exit(ctx);
+
 }
 
-int open_and_callback(libusb_device *device, int(action)(libusb_device_handle *))
+int open_and_callback(struct usb_device *device, int(action)(struct usb_dev_handle *))
 {
-	libusb_device_handle *handle;
-	int err = 0;
+	struct usb_dev_handle *handle;
 	
-	err = usb_return(libusb_open(device, &handle), "libusb_open");
-	if (!err) {
+	handle = usb_open(device);
+	if (handle) {
 		if (action)
 			action(handle);
-		libusb_close(handle);
+		usb_close(handle);
 	}
 	return (0);
 }
 	
-int device_vendor_product_is(libusb_device *device, uint16_t vendor, uint16_t product)
+int device_vendor_product_is(struct usb_device *device, u_int16_t vendor, u_int16_t product)
 {
 	int r;
-	struct libusb_device_descriptor devdesc;
 
-	r = usb_return(libusb_get_device_descriptor(device, &devdesc), "device_vendor_product_is: libusb_get_device_descriptor");
-	if (r == 0) {
-		r = (devdesc.idVendor == vendor && devdesc.idProduct == product);
-	}
+	r = (device->descriptor.idVendor == vendor && device->descriptor.idProduct == product);
+
 	return r;
 }
 
-int device_bus_address(libusb_device *device, uint8_t *bus_id, uint8_t *device_id)
+int device_bus_address(struct usb_dev_handle *handle, u_int8_t *bus_id, u_int8_t *device_id)
 {
-	*bus_id = usb_return(libusb_get_bus_number(device), "device_bus_address: libusb_get_bus_number");
-	*device_id = usb_return(libusb_get_device_address(device), "device_bus_address: libusb_get_device_address");
+	struct usb_device *device = usb_device(handle);
+	*bus_id = device->bus->location;
+	*device_id = device->devnum;
 	
 	return (bus_id > 0 && device_id > 0);
 }
 
-int driver_to_be_reattached = 0;
-
-int detach_driver(libusb_device_handle *handle, int interface_number)
+int detach_driver(struct usb_dev_handle *handle, int interface_number)
 {
 	int r;
-	if (usb_return(libusb_kernel_driver_active(handle, interface_number), "detach_driver: libusb_kernel_driver_active")) {
-		r = usb_return(libusb_detach_kernel_driver(handle, interface_number), "detach_driver: libusb_detach_kernel_driver");
-		driver_to_be_reattached = 1;
-	}
+	r = usb_detach_kernel_driver_np(handle, interface_number);
+	r = usb_return(((r == -61)? 0 : r), "detach_driver: usb_detach_kernel_driver_np");
+	
 	return r;
 }
 
-int set_configuration(libusb_device_handle *handle, int configuration)
+int set_configuration(struct usb_dev_handle *handle, int configuration)
 {
 	int r;
-	r = usb_return(libusb_set_configuration(handle, configuration), "libusb_set_configuration");
+	r = usb_return(usb_set_configuration(handle, configuration), "libusb_set_configuration");
 	return r;
 }
 
-int claim_interface(libusb_device_handle *handle, int interface_number)
+int claim_interface(struct usb_dev_handle *handle, int interface_number)
 {
 	int r;
-	r = usb_return(libusb_claim_interface(handle, interface_number), "libusb_claim_interface");
+	r = usb_return(usb_claim_interface(handle, interface_number), "libusb_claim_interface");
 	return r;
 }
 
-int release_interface(libusb_device_handle *handle, int interface_number)
+int release_interface(struct usb_dev_handle *handle, int interface_number)
 {
 	int r;
-	r = usb_return(libusb_release_interface(handle, interface_number), "libusb_release_interface");
+	r = usb_return(usb_release_interface(handle, interface_number), "libusb_release_interface");
 	return 1;
 }
 
-int restore_driver(libusb_device_handle *handle, int interface_number)
+int restore_driver(struct usb_dev_handle *handle, int interface_number)
 {
-	int r = 0;
-	if (driver_to_be_reattached == 1) {
-		r = libusb_attach_kernel_driver(handle, interface_number);
-	}
-	return r;
+	return 0;
 }
 
 #define CTRL_REQ_TYPE 0x21
 #define CTRL_REQ 0x09
 #define CTRL_VALUE 0x0200
 
-int control_message(libusb_device_handle *handle, uint16_t index, const unsigned char *pquestion, int qlength) 
+int control_message(struct usb_dev_handle *handle, u_int16_t index, const char *pquestion, int qlength) 
 {
 	int r;
 	unsigned char question[qlength];
     
 	memcpy(question, pquestion, qlength);
 
-	r = usb_return(libusb_control_transfer(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, index, 
-			(unsigned char *) question, qlength, CONTROL_TIMEOUT),
+	r = usb_return(usb_control_msg(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, index, 
+			(char *) question, qlength, CONTROL_TIMEOUT),
 			"libusb_control_transfer");
 	return r;
 }
 
 #define READ_ENDPOINT 0x82
 
-int interrupt_read(libusb_device_handle *handle, unsigned char *data, int datalength)
+int interrupt_read(struct usb_dev_handle *handle, char *data, int datalength)
 {
-	int r, total_transferred = 0, transferred = 0;
+	int r;
 
-	do {
-		r = usb_return(libusb_interrupt_transfer(handle, READ_ENDPOINT, data, datalength, &transferred, READ_TIMEOUT),
+	r = usb_return(usb_interrupt_read(handle, READ_ENDPOINT, data, datalength, READ_TIMEOUT),
 			"libusb_interrupt_transfer");
-		total_transferred += transferred;
-//		fprintf(stdout, "tx: %d, %d\n", datalength, transferred);
-	}
-	while (r == 0 && total_transferred < datalength);
 	
 	return r;
 }

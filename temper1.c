@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <time.h>
-#include <libusb-1.0/libusb.h>
 
 #include "usbhelper.h"
 
@@ -9,13 +8,13 @@
 #define INTERFACE0 0
 #define INTERFACE1 1
 
-int is_device_temper1(libusb_device *device);
-int use_device_temper1(libusb_device_handle *handle);
-int initialise_temper1(libusb_device_handle *handle);
-int read_temper1(libusb_device_handle *handle, unsigned char *data);
-int close_temper1(libusb_device_handle *handle);
+int is_device_temper1(struct usb_device *device);
+int use_device_temper1(struct usb_dev_handle *handle);
+int initialise_temper1(struct usb_dev_handle *handle);
+int read_temper1(struct usb_dev_handle *handle, char *data);
+int close_temper1(struct usb_dev_handle *handle);
 
-float raw_to_c(uint8_t bus_id, uint8_t device_id, unsigned char *data);
+float raw_to_c(u_int8_t bus_id, u_int8_t device_id, char *data);
 
 int main ()
 {
@@ -23,7 +22,7 @@ int main ()
 	return 0;
 }
 
-void output_data(uint8_t bus_id, uint8_t device_id, unsigned char *data)
+void output_data(u_int8_t bus_id, u_int8_t device_id, char *data)
 {
 	struct tm *utc;
 	time_t t;
@@ -40,18 +39,18 @@ void output_data(uint8_t bus_id, uint8_t device_id, unsigned char *data)
 	fflush(stdout);
 }
 
-int is_device_temper1(libusb_device *device)
+int is_device_temper1(struct usb_device *device)
 {
 	return device_vendor_product_is(device, VENDOR_ID, PRODUCT_ID);
 }
 
-int use_device_temper1(libusb_device_handle *handle)
+int use_device_temper1(struct usb_dev_handle *handle)
 {
 	int r;
-	uint8_t bus_id, device_id;
-	unsigned char data[8];
+	u_int8_t bus_id, device_id;
+	char data[8];
 	
-	r = device_bus_address(libusb_get_device(handle), &bus_id, &device_id);
+	r = device_bus_address(handle, &bus_id, &device_id);
 	
 	r = initialise_temper1(handle);
 	if (r >= 0)
@@ -72,7 +71,7 @@ int use_device_temper1(libusb_device_handle *handle)
 static float scale = 1.0287;
 static float offset = -0.85;
 
-float raw_to_c(uint8_t bus_id, uint8_t device_id, unsigned char *data)
+float raw_to_c(u_int8_t bus_id, u_int8_t device_id, char *data)
 {
 	unsigned int rawtemp = (data[3] & 0xFF) + (data[2] << 8);
 	float temp_c = rawtemp * (125.0 / 32000.0);
@@ -80,9 +79,9 @@ float raw_to_c(uint8_t bus_id, uint8_t device_id, unsigned char *data)
 	return temp_c;
 }
 
-const static unsigned char cq_initialise[] = { 0x01, 0x01 };
+const static char cq_initialise[] = { 0x01, 0x01 };
 
-int initialise_temper1(libusb_device_handle *handle)
+int initialise_temper1(struct usb_dev_handle *handle)
 {
 	int r = detach_driver(handle, INTERFACE0);
 	if (r >= 0) r = 
@@ -99,9 +98,9 @@ int initialise_temper1(libusb_device_handle *handle)
 	return r;
 }
 
-const static unsigned char cq_temperature[] = { 0x01, 0x80, 0x33, 0x01, 0x00, 0x00, 0x00, 0x00 };
+const static char cq_temperature[] = { 0x01, 0x80, 0x33, 0x01, 0x00, 0x00, 0x00, 0x00 };
 
-int read_temper1(libusb_device_handle *handle, unsigned char *data)
+int read_temper1(struct usb_dev_handle *handle, char *data)
 {
 	int r = 
 		control_message(handle, 1, cq_temperature, sizeof(cq_temperature));
@@ -111,7 +110,7 @@ int read_temper1(libusb_device_handle *handle, unsigned char *data)
 	return r;
 }
 
-int close_temper1(libusb_device_handle *handle)
+int close_temper1(struct usb_dev_handle *handle)
 {
 	int r = 
 		release_interface(handle, INTERFACE0);	
