@@ -31,7 +31,8 @@ void iterate_usb(int (is_interesting)(struct usb_device *),
 	);
 
 int device_vendor_product_is(struct usb_device *device, u_int16_t vendor, u_int16_t product);
-int device_bus_address(struct usb_dev_handle *handle, u_int8_t *bus_id, u_int8_t *device_id);
+int handle_bus_address(struct usb_dev_handle *handle, u_int8_t *bus_id, u_int8_t *device_id);
+int handle_bus_port(struct usb_dev_handle *handle, char *bus_port);
 
 int detach_driver(usb_dev_handle *handle, int interface_number);
 int set_configuration(usb_dev_handle *handle, int configuration);

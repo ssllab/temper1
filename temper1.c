@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <string.h>
 #include <time.h>
 
 #include "usbhelper.h"
@@ -43,7 +44,7 @@ static int use_temper1(struct usb_dev_handle *handle);
 static int read_temper1(struct usb_dev_handle *handle, char *data);
 static int close_temper1(struct usb_dev_handle *handle);
 
-static float raw_to_c(u_int8_t bus_id, u_int8_t device_id, char *data);
+static float raw_to_c(char *busport, char *data);
 static float c_to_u(float deg_c, char unit);
 
 typedef struct options {
@@ -102,7 +103,7 @@ int main(int argc, char *argv[])
 			case 'o':
 				break;
 			case 'C':
-				opts.config_file = strcpy(opt.config_file, optarg);
+				opts.config_file = strcpy(opts.config_file, optarg);
 				break;
 			case 'u': {
 					int u;
@@ -147,7 +148,7 @@ int main(int argc, char *argv[])
 }
 
 // Worker methods
-static void output_data(u_int8_t bus_id, u_int8_t device_id, char *data)
+static void output_data(char *busport, char *data)
 {
 	struct tm *utc;
 	time_t tm;
@@ -157,9 +158,9 @@ static void output_data(u_int8_t bus_id, u_int8_t device_id, char *data)
 	char dt[80];
 	strftime(dt, 80, "%d-%b-%Y %H:%M", utc);
 
-	float t = c_to_u(raw_to_c(bus_id, device_id, data), opts.units);
+	float t = c_to_u(raw_to_c(busport, data), opts.units);
 
-	fprintf(stdout, "(%ld) %s,%d,%d,%f\n", tm, dt, bus_id, device_id, t);
+	fprintf(stdout, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
 //	fprintf(stdout, "%s,%f\n", dt, t);
 	fflush(stdout);
 }
@@ -172,16 +173,15 @@ static int is_device_temper1(struct usb_device *device)
 static int use_temper1(struct usb_dev_handle *handle)
 {
 	int r;
-	u_int8_t bus_id, device_id;
 	char data[8];
+	char busport[100] = {};
 	
-	r = device_bus_address(handle, &bus_id, &device_id);
-	
-	if (r >= 0)
-		r = read_temper1(handle, data);
-		
+	r = handle_bus_port(handle, &busport);
+	printf("Retrieved: %s %p\n", busport, busport);
+
+	r = read_temper1(handle, data);
 	if (r >= 0) 
-		output_data(bus_id, device_id, data);
+		output_data(busport, data);
 	
 	return r;
 }
@@ -208,7 +208,7 @@ static void load_calibrations()
 static float scale = 1.0287;
 static float offset = -0.85;
 
-static float raw_to_c(u_int8_t bus_id, u_int8_t device_id, char *data)
+static float raw_to_c(char *busport, char *data)
 {
 	unsigned int rawtemp = (data[3] & 0xFF) + (data[2] << 8);
 	float temp_c = rawtemp * (125.0 / 32000.0);
