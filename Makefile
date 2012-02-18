@@ -11,7 +11,7 @@ EXECUTABLE=temper1
 all: $(SOURCES) $(EXECUTABLE)
 	
 $(EXECUTABLE): $(OBJECTS) 
-	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
+	$(CC) -o $@ $(OBJECTS) $(LDFLAGS) 
 
 %.o: %.c $(DEPS)
 	$(CC) $(CFLAGS) $< -o $@
