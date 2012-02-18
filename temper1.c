@@ -20,9 +20,15 @@
  */
 
 #include <stdio.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <getopt.h>
 #include <time.h>
 
 #include "usbhelper.h"
+
+#define VERSION "0.1"
 
 #define VENDOR_ID 0x0c45
 #define PRODUCT_ID 0x7401
@@ -30,36 +36,127 @@
 #define INTERFACE1 1
 
 // Forward declarations
+static void load_calibrations();
 static int is_device_temper1(struct usb_device *device);
-static int use_device_temper1(struct usb_dev_handle *handle);
 static int initialise_temper1(struct usb_dev_handle *handle);
+static int use_temper1(struct usb_dev_handle *handle);
 static int read_temper1(struct usb_dev_handle *handle, char *data);
 static int close_temper1(struct usb_dev_handle *handle);
 
 static float raw_to_c(u_int8_t bus_id, u_int8_t device_id, char *data);
+static float c_to_u(float deg_c, char unit);
+
+typedef struct options {
+	int verbose;
+	int daemon;
+	char *output_file;
+	char *config_file;
+	char units;
+	char *format;
+} options;
+
+options opts;
 
 // Main...
 int main(int argc, char *argv[])
 {
-	iterate_usb(is_device_temper1, use_device_temper1);
-	return 0;
+	opts.verbose = FALSE;
+	opts.daemon = FALSE;
+	opts.output_file = "stdout";
+	opts.config_file = "temper1.conf";
+	opts.units = 'C';
+	opts.format = "%d-%b-%Y %H:%M";
+	
+	static struct option long_options[] =
+	 {
+	   {"help", no_argument,          0, 'h'},
+	   {"version", no_argument,       0, 'V'},
+	   {"verbose", no_argument,       0, 'v'},
+	   {"daemon",  required_argument, 0, 'd'},
+	   {"output",  required_argument, 0, 'o'},
+	   {"config",  required_argument, 0, 'c'},
+	   {"units",   required_argument, 0, 'u'},
+	   {"timestamp",  required_argument, 0, 't'},
+	   {0, 0, 0, 0}
+	 };
+	int options_index = 0, c = 0, proceed = TRUE;
+	
+	while ((c = getopt_long(argc, argv, "hVvd:o:c:u:t:", long_options, &options_index)) != -1) 
+	{
+		switch (c) {
+			case 'h':
+				// TODO
+				proceed = FALSE;
+				break;
+			case 'V':
+				proceed = FALSE;
+				fprintf(stdout, "temper1 version %s\n", VERSION);
+				break;
+			case 'v':
+				opts.verbose = TRUE;
+				break;
+			case 'd':
+				opts.daemon = TRUE;
+				break;
+			case 'o':
+				break;
+			case 'c':
+				break;
+			case 'u': {
+					int u;
+					char unit = toupper(optarg[0]);
+					char units[] = { 'C', 'F', 'K' };
+					for (u = 0; u < sizeof(units); u++) {
+						if (units[u] == unit) {
+							opts.units = units[u];
+							break;
+						}
+					}
+					break;
+				}
+			case 't':
+				break;
+			case '?':
+				proceed = FALSE;
+				break;
+			default:
+				break;
+		}
+	}
+	
+	if (proceed) {
+		initialise_usb();
+		load_calibrations();
+		
+	/* // This is the one shot read
+		iterate_usb(is_device_temper1, 
+					initialise_temper1, use_temper1, close_temper1);
+	*/
+	
+		// These separate iterations allow for the use_temper1 to do loops over all devices (daemon mode)
+		iterate_usb(is_device_temper1, initialise_temper1, NULL, NULL);
+		iterate_usb(is_device_temper1, NULL, use_temper1, NULL);
+		iterate_usb(is_device_temper1, NULL, NULL, close_temper1);
+	}
+	
+	return (!proceed);
 }
 
 // Worker methods
 static void output_data(u_int8_t bus_id, u_int8_t device_id, char *data)
 {
 	struct tm *utc;
-	time_t t;
-	t = time(NULL);
-	utc = gmtime(&t);
+	time_t tm;
+	tm = time(NULL);
+	utc = gmtime(&tm);
 	
 	char dt[80];
 	strftime(dt, 80, "%d-%b-%Y %H:%M", utc);
 
-	float c = raw_to_c(bus_id, device_id, data);
+	float t = c_to_u(raw_to_c(bus_id, device_id, data), opts.units);
 
-	fprintf(stdout, "%s,%d,%d,%f\n", dt, bus_id, device_id, c);
-//	fprintf(stdout, "%s,%f\n", dt, c);
+	fprintf(stdout, "(%ld) %s,%d,%d,%f\n", tm, dt, bus_id, device_id, t);
+//	fprintf(stdout, "%s,%f\n", dt, t);
 	fflush(stdout);
 }
 
@@ -68,7 +165,7 @@ static int is_device_temper1(struct usb_device *device)
 	return device_vendor_product_is(device, VENDOR_ID, PRODUCT_ID);
 }
 
-static int use_device_temper1(struct usb_dev_handle *handle)
+static int use_temper1(struct usb_dev_handle *handle)
 {
 	int r;
 	u_int8_t bus_id, device_id;
@@ -76,16 +173,26 @@ static int use_device_temper1(struct usb_dev_handle *handle)
 	
 	r = device_bus_address(handle, &bus_id, &device_id);
 	
-	r = initialise_temper1(handle);
 	if (r >= 0)
 		r = read_temper1(handle, data);
 		
 	if (r >= 0) 
 		output_data(bus_id, device_id, data);
 	
-	r = close_temper1(handle);
-			
 	return r;
+}
+
+
+typedef struct temper1_calibration {
+	char *port_descriptor;
+	float scale;
+	float offset;
+} temper1_calibration;
+temper1_calibration temper1_calibrations[127];
+
+static void load_calibrations() 
+{
+	// TODO
 }
 
 // Todo: find way to identify device, and then apply specific calibration variables
@@ -105,6 +212,19 @@ static float raw_to_c(u_int8_t bus_id, u_int8_t device_id, char *data)
 	return temp_c;
 }
 
+static float c_to_u(float deg_c, char unit)
+{
+	if (unit == 'F')
+		return (deg_c * 1.8) + 32.0;
+	else if (unit == 'K')
+		return (deg_c + 273.15);
+	else
+		return deg_c;
+}
+
+#define CTRL_REQ_TYPE 0x21
+#define CTRL_REQ 0x09
+#define CTRL_VALUE 0x0200
 const static char cq_initialise[] = { 0x01, 0x01 };
 
 static int initialise_temper1(struct usb_dev_handle *handle)
@@ -119,19 +239,22 @@ static int initialise_temper1(struct usb_dev_handle *handle)
 	if (r >= 0) r = 
 		claim_interface(handle, INTERFACE1);
 	if (r >= 0) r = 
-		control_message(handle, 0, cq_initialise, sizeof(cq_initialise));
+		control_message(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, 
+			0, cq_initialise, sizeof(cq_initialise));
 		
 	return r;
 }
 
+#define READ_ENDPOINT 0x82
 const static char cq_temperature[] = { 0x01, 0x80, 0x33, 0x01, 0x00, 0x00, 0x00, 0x00 };
 
 static int read_temper1(struct usb_dev_handle *handle, char *data)
 {
 	int r = 
-		control_message(handle, 1, cq_temperature, sizeof(cq_temperature));
+		control_message(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, 
+			1, cq_temperature, sizeof(cq_temperature));
 	if (r >= 0) r = 
-		interrupt_read(handle, data, sizeof(data));
+		interrupt_read(handle, READ_ENDPOINT, data, sizeof(data));
 	
 	return r;
 }

@@ -24,7 +24,9 @@
 #define CONTROL_TIMEOUT 5000
 #define READ_TIMEOUT 5000
 
-static int open_and_callback(struct usb_device *device, int (action)(struct usb_dev_handle *));
+static struct usb_dev_handle *open_handle_for_device(struct usb_device *, 
+	int (do_open)(struct usb_dev_handle *));
+static void close_handle(struct usb_dev_handle *handle, int (do_open)(struct usb_dev_handle *));
 
 static void error(char *info, int retcode)
 {
@@ -40,56 +42,122 @@ static int usb_return(int retcode, char *info)
 	return retcode;
 }
 
-void iterate_usb(int (is_interesting)(struct usb_device *),
-	int (do_process)(struct usb_dev_handle *))
+void initialise_usb()
 {
 	usb_init();
-	usb_find_busses();
-	usb_find_devices();
 	
 	#ifdef DEBUG
 	usb_set_debug(2);
 	#endif
-	
+}
+
+void iterate_usb(int (is_interesting)(struct usb_device *), 
+	int (do_open)(struct usb_dev_handle *),
+	int (do_process)(struct usb_dev_handle *),
+	int (do_close)(struct usb_dev_handle *)
+	)
+{
+	usb_find_busses();
+	usb_find_devices();
+
 	struct usb_bus *bus;
 	struct usb_device *dev;
  
 	for (bus = usb_busses; bus; bus = bus->next) {
 		for (dev = bus->devices; dev; dev = dev->next) {
 			if (is_interesting(dev)) {
-				open_and_callback(dev, do_process);
+				struct usb_dev_handle *handle = open_handle_for_device(dev, do_open);
+
+				if (do_process) 
+					do_process(handle);
+				
+				if (do_close)
+					close_handle(handle, do_close);
 			}
 		}
 	}
 
 }
 
-static int open_and_callback(struct usb_device *device, int(action)(struct usb_dev_handle *))
+device_handle *device_handles = NULL;
+
+static device_handle *add_device_handle(struct usb_device *dev, struct usb_dev_handle *handle)
 {
-	struct usb_dev_handle *handle;
+	device_handle *dh = device_handles;
+	device_handle *dc = NULL;
+
+	while(dh != NULL && (dh = (device_handle *)dh->next));
 	
-	handle = usb_open(device);
-	if (handle) {
-		if (action)
-			action(handle);
+	dc = (device_handle *)malloc(sizeof(device_handle));
+	dc->device = dev;
+	dc->handle = handle;
+	dc->next = NULL;
+
+	if (dh == NULL) device_handles = dh = dc;
+	else dh->next = (device_handle *)dc;
+	
+	printf("Added: %p (%p, %p)\n", dc, dc->device, dc->handle);
+	return dc;
+}
+
+static device_handle *get_device_handle_by_device(struct usb_device *dev)
+{
+	device_handle *dh = device_handles;
+	if (dh == NULL)
+		printf("Head not found\n");
+	else
+		printf("Head : %p (%p, %p)\n", dh, dh->device, dh->handle);
+
+	while(dh != NULL) {
+		printf("Test : %p (%p, %p)\n", dh, dh->device, dh->handle);
+		if (dh->device == dev) {
+			break;
+		}
+		dh = (device_handle *)dh->next;
+	}
+
+	if (dh == NULL) {
+		printf("Not found for %p\n", dev);
+	}
+	else
+		printf("Found: %p (%p, %p)\n", dh, dh->device, dh->handle);
+	return dh;
+}
+
+static struct usb_dev_handle *open_handle_for_device(struct usb_device *dev, 
+	int (do_open)(struct usb_dev_handle *))
+{
+	struct device_handle *dh = get_device_handle_by_device(dev);
+	struct usb_dev_handle *handle;
+
+	if (!dh)	{
+		handle = usb_open(dev);
+		if (do_open) 
+			do_open(handle);
+		// and stash new handle
+		dh = add_device_handle(dev, handle);
+	}
+	return dh->handle;
+}
+
+static void close_handle(struct usb_dev_handle *handle, 
+	int (do_close)(struct usb_dev_handle *))
+{
+	if (do_close) {
+		do_close(handle);
 		usb_close(handle);
 	}
-	return (0);
 }
-	
+
 int device_vendor_product_is(struct usb_device *device, u_int16_t vendor, u_int16_t product)
 {
-	int r;
-
-	r = (device->descriptor.idVendor == vendor && device->descriptor.idProduct == product);
-
-	return r;
+	return (device->descriptor.idVendor == vendor && device->descriptor.idProduct == product);
 }
 
 int device_bus_address(struct usb_dev_handle *handle, u_int8_t *bus_id, u_int8_t *device_id)
 {
 	struct usb_device *device = usb_device(handle);
-	*bus_id = device->bus->location;
+	*bus_id = atoi(device->bus->dirname);
 	*device_id = device->devnum;
 	
 	return (bus_id > 0 && device_id > 0);
@@ -107,21 +175,21 @@ int detach_driver(struct usb_dev_handle *handle, int interface_number)
 int set_configuration(struct usb_dev_handle *handle, int configuration)
 {
 	int r;
-	r = usb_return(usb_set_configuration(handle, configuration), "libusb_set_configuration");
+	r = usb_return(usb_set_configuration(handle, configuration), "usb_set_configuration");
 	return r;
 }
 
 int claim_interface(struct usb_dev_handle *handle, int interface_number)
 {
 	int r;
-	r = usb_return(usb_claim_interface(handle, interface_number), "libusb_claim_interface");
+	r = usb_return(usb_claim_interface(handle, interface_number), "usb_claim_interface");
 	return r;
 }
 
 int release_interface(struct usb_dev_handle *handle, int interface_number)
 {
 	int r;
-	r = usb_return(usb_release_interface(handle, interface_number), "libusb_release_interface");
+	r = usb_return(usb_release_interface(handle, interface_number), "usb_release_interface");
 	return 1;
 }
 
@@ -130,31 +198,28 @@ int restore_driver(struct usb_dev_handle *handle, int interface_number)
 	return 0;
 }
 
-#define CTRL_REQ_TYPE 0x21
-#define CTRL_REQ 0x09
-#define CTRL_VALUE 0x0200
-
-int control_message(struct usb_dev_handle *handle, u_int16_t index, const char *pquestion, int qlength) 
+int control_message(struct usb_dev_handle *handle, int requesttype, int request, int value, 
+	int index, const char *pquestion, int qlength) 
 {
 	int r;
 	unsigned char question[qlength];
     
 	memcpy(question, pquestion, qlength);
 
-	r = usb_return(usb_control_msg(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, index, 
+	r = usb_return(usb_control_msg(handle, requesttype, request, value, index, 
 			(char *) question, qlength, CONTROL_TIMEOUT),
-			"libusb_control_transfer");
+			"usb_control_msg");
 	return r;
 }
 
-#define READ_ENDPOINT 0x82
-
-int interrupt_read(struct usb_dev_handle *handle, char *data, int datalength)
+int interrupt_read(struct usb_dev_handle *handle, int ep, char *data, int datalength)
 {
 	int r;
 
-	r = usb_return(usb_interrupt_read(handle, READ_ENDPOINT, data, datalength, READ_TIMEOUT),
-			"libusb_interrupt_transfer");
+	r = usb_return(usb_interrupt_read(handle, ep, data, datalength, READ_TIMEOUT),
+			"usb_interrupt_read");
 	
 	return r;
 }
+
+static const char root_sys_bus_usb_devices[] = "/sys/bus/usb/devices";
