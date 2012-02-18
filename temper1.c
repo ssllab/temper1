@@ -1,7 +1,7 @@
 /*
  * temper1.c by Andrew Mannering (c) 2012 (andrewm@sledgehammersolutions.co.uk)
  * based on pcsensor.c by Michitaka Ohno (c) 2011 (elpeo@mars.dti.ne.jp)
- * based oc pcsensor.c by Juan Carlos Perez (c) 2011 (cray@isp-sl.com)
+ * based on pcsensor.c by Juan Carlos Perez (c) 2011 (cray@isp-sl.com)
  * based on Temper.c by Robert Kavaler (c) 2009 (relavak.com)
  * All rights reserved.
  *
@@ -74,14 +74,15 @@ int main(int argc, char *argv[])
 	   {"verbose", no_argument,       0, 'v'},
 	   {"daemon",  required_argument, 0, 'd'},
 	   {"output",  required_argument, 0, 'o'},
-	   {"config",  required_argument, 0, 'c'},
+	   {"config",  required_argument, 0, 'C'},
 	   {"units",   required_argument, 0, 'u'},
 	   {"timestamp",  required_argument, 0, 't'},
+	   {"calibration", required_argument, 0, 'c' },
 	   {0, 0, 0, 0}
 	 };
 	int options_index = 0, c = 0, proceed = TRUE;
 	
-	while ((c = getopt_long(argc, argv, "hVvd:o:c:u:t:", long_options, &options_index)) != -1) 
+	while ((c = getopt_long(argc, argv, "hVvd:o:C:u:t:c", long_options, &options_index)) != -1) 
 	{
 		switch (c) {
 			case 'h':
@@ -100,7 +101,8 @@ int main(int argc, char *argv[])
 				break;
 			case 'o':
 				break;
-			case 'c':
+			case 'C':
+				opts.config_file = strcpy(opt.config_file, optarg);
 				break;
 			case 'u': {
 					int u;
@@ -114,6 +116,8 @@ int main(int argc, char *argv[])
 					}
 					break;
 				}
+			case 'c':
+				break;
 			case 't':
 				break;
 			case '?':
