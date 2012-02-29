@@ -191,8 +191,8 @@ static void output_data(char *busport, char *data)
 		}
 	}
 
-//	fprintf(fp, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
-	fprintf(fp, "%s,%f\n", dt, t) ;
+	fprintf(fp, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
+//	fprintf(fp, "%s,%f\n", dt, t) ;
 	fflush(fp);
 	if (fp != stdout) 
 		fclose(fp);
@@ -332,7 +332,7 @@ static float raw_to_c(char *busport, int rawtemp)
 	float temp_c = rawtemp * (125.0 / 32000.0);
 	
 	temper1_calibration cal = get_calibration(busport);
-	temp_c = (temp_c * cal.scale) + cal.offset;
+	temp_c = (temp_c * (cal.scale == 0 ? 1.0 : cal.scale)) + cal.offset;
 	return temp_c;
 }
 
@@ -378,8 +378,7 @@ const static char cq_temperature[] = { 0x01, 0x80, 0x33, 0x01, 0x00, 0x00, 0x00,
 
 static int read_temper1(struct usb_dev_handle *handle, char *data, int datalen)
 {
-	int r = 
-		control_message(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, 
+	int r = control_message(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, 
 			1, cq_temperature, sizeof(cq_temperature));
 	if (r >= 0) r = 
 		interrupt_read(handle, READ_ENDPOINT, data, datalen);
