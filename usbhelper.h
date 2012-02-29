@@ -23,8 +23,8 @@
 #define TRUE (!(FALSE))
 #endif
 
-void initialise_usb();
-void iterate_usb(int (is_interesting)(struct usb_device *), 
+void initialise_usb(int verbose);
+int iterate_usb(int (is_interesting)(struct usb_device *), 
 	int (do_open)(struct usb_dev_handle *),
 	int (do_process)(struct usb_dev_handle *),
 	int (do_close)(struct usb_dev_handle *)

@@ -27,11 +27,12 @@
 
 static struct usb_dev_handle *open_handle_for_device(struct usb_device *, 
 	int (do_open)(struct usb_dev_handle *));
-static void close_handle(struct usb_dev_handle *handle, int (do_open)(struct usb_dev_handle *));
+static int close_handle(struct usb_dev_handle *handle, int (do_open)(struct usb_dev_handle *));
+static int debug = FALSE;
 
 static void error(char *info, int retcode)
 {
-	fprintf(stderr, "usbhelper: %s %d\n", info, retcode);
+	if (debug) fprintf(stderr, "usbhelper: %s %d\n", info, retcode);
 	fflush(stderr);
 }
 
@@ -43,16 +44,18 @@ static int usb_return(int retcode, char *info)
 	return retcode;
 }
 
-void initialise_usb()
+void initialise_usb(int verbose)
 {
 	usb_init();
 	
-	#ifdef DEBUG
-	usb_set_debug(2);
-	#endif
+	if (verbose) {
+		fprintf(stderr, "Verbose mode enabled\n");
+		usb_set_debug(2);
+		debug = verbose;
+	}
 }
 
-void iterate_usb(int (is_interesting)(struct usb_device *), 
+int iterate_usb(int (is_interesting)(struct usb_device *), 
 	int (do_open)(struct usb_dev_handle *),
 	int (do_process)(struct usb_dev_handle *),
 	int (do_close)(struct usb_dev_handle *)
@@ -61,6 +64,7 @@ void iterate_usb(int (is_interesting)(struct usb_device *),
 	usb_find_busses();
 	usb_find_devices();
 
+	int result = 0;
 	struct usb_bus *bus;
 	struct usb_device *dev;
  
@@ -68,16 +72,24 @@ void iterate_usb(int (is_interesting)(struct usb_device *),
 		for (dev = bus->devices; dev; dev = dev->next) {
 			if (is_interesting(dev)) {
 				struct usb_dev_handle *handle = open_handle_for_device(dev, do_open);
-
-				if (do_process) 
-					do_process(handle);
-				
-				if (do_close)
-					close_handle(handle, do_close);
+				if (handle) {
+					if (do_process) 
+						result += do_process(handle);
+					
+					if (do_close)
+						result += close_handle(handle, do_close);
+				}
+				else {
+					result += 1;
+				}
 			}
+			if (result > 0)
+				break;
 		}
+		if (result > 0)
+			break;
 	}
-
+	return result;
 }
 
 device_handle *device_handles = NULL;
@@ -97,31 +109,20 @@ static device_handle *add_device_handle(struct usb_device *dev, struct usb_dev_h
 	if (dh == NULL) device_handles = dh = dc;
 	else dh->next = (device_handle *)dc;
 	
-	printf("Added: %p (%p, %p)\n", dc, dc->device, dc->handle);
 	return dc;
 }
 
 static device_handle *get_device_handle_by_device(struct usb_device *dev)
 {
 	device_handle *dh = device_handles;
-	if (dh == NULL)
-		printf("Head not found\n");
-	else
-		printf("Head : %p (%p, %p)\n", dh, dh->device, dh->handle);
 
 	while(dh != NULL) {
-		printf("Test : %p (%p, %p)\n", dh, dh->device, dh->handle);
 		if (dh->device == dev) {
 			break;
 		}
 		dh = (device_handle *)dh->next;
 	}
 
-	if (dh == NULL) {
-		printf("Not found for %p\n", dev);
-	}
-	else
-		printf("Found: %p (%p, %p)\n", dh, dh->device, dh->handle);
 	return dh;
 }
 
@@ -130,24 +131,28 @@ static struct usb_dev_handle *open_handle_for_device(struct usb_device *dev,
 {
 	struct device_handle *dh = get_device_handle_by_device(dev);
 	struct usb_dev_handle *handle;
+	int r;
 
 	if (!dh)	{
 		handle = usb_open(dev);
 		if (do_open) 
-			do_open(handle);
+			r = do_open(handle);
 		// and stash new handle
-		dh = add_device_handle(dev, handle);
+		if (r >= 0)
+			dh = add_device_handle(dev, handle);
 	}
 	return dh->handle;
 }
 
-static void close_handle(struct usb_dev_handle *handle, 
+static int close_handle(struct usb_dev_handle *handle, 
 	int (do_close)(struct usb_dev_handle *))
 {
+	int r = 0;
 	if (do_close) {
-		do_close(handle);
+		r = do_close(handle);
 		usb_close(handle);
 	}
+	return r;
 }
 
 int device_vendor_product_is(struct usb_device *device, u_int16_t vendor, u_int16_t product)
@@ -239,7 +244,7 @@ int handle_bus_port(struct usb_dev_handle *handle, char *bus_port)
 	sprintf(testpath, "%s/devpath", devicepath);
 	FILE *fdp = fopen(testpath,"r");
 	if( fbn && fdp ) {
-		printf("device_bus_port: mode 1 - modern sysfs\n");
+		if (debug) fprintf(stderr, "device_bus_port: mode 1 - modern sysfs\n");
 		// Ahh, good. Modern sysfs implementation, so do this properly.
 		char sysfs_busnum[4] = {};
 		fgets(sysfs_busnum, 4, fbn);
@@ -255,18 +260,18 @@ int handle_bus_port(struct usb_dev_handle *handle, char *bus_port)
 		// Crud. Probably lame old sysfs implementation, try the bodge method
 		char linkpath[FILENAME_MAX - 1];
 		if (readlink(devicepath, linkpath, FILENAME_MAX) > 0) {
-			printf("device_bus_port: mode 2 - elderly sysfs\n");
+			if (debug) fprintf(stderr, "device_bus_port: mode 2 - elderly sysfs\n");
 			// take the last bit off the link target
 			char *bodge = basename(linkpath);
 			strncpy(bus_port, bodge, strlen(bodge));
 		}
 		else {
 			// No way to get the values. Return the bus-address instead
-			printf("device_bus_port: mode 99 - no sysfs - lie\n");		
+			if (debug) fprintf(stderr, "device_bus_port: mode 99 - no sysfs - lie\n");		
 			sprintf(bus_port, "%d-%d", bus_id, device_id);
 		}
 	}
 	
-	printf("device_bus_port: (%d, %d) => (%s) %p\n", bus_id, device_id, bus_port, bus_port);
+	if (debug) fprintf(stderr, "device_bus_port: (%d, %d) => (%s) %p\n", bus_id, device_id, bus_port, bus_port);
 	return (1);
 }
