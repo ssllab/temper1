@@ -3,8 +3,8 @@
 CC=gcc
 CFLAGS=-c -Wall
 LDFLAGS=-lusb
-SOURCES=temper1.c usbhelper.c strreplace.c
-DEPS=usbhelper.h strreplace.h
+SOURCES=temper1.c usbhelper.c sysfshelper.c strreplace.c
+DEPS=usbhelper.h sysfshelper.h strreplace.h
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=temper1
 

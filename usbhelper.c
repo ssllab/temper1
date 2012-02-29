@@ -21,6 +21,7 @@
 #include <libgen.h>
 
 #include "usbhelper.h"
+#include "sysfshelper.h"
 
 #define CONTROL_TIMEOUT 5000
 #define READ_TIMEOUT 5000
@@ -111,17 +112,13 @@ static device_handle *add_device_handle(struct usb_device *dev, struct usb_dev_h
 
 	if (dh == NULL) device_handles = dh = dc;
 	else dh->next = (device_handle *)dc;
-//fprintf(stderr, "Added device struct (%p, %p) = %p\n", dev, handle, dc); fflush(stderr);
-//fprintf(stderr, "Updated device struct (%p, %p, %p) = %p\n", dh->device, dh->handle, dh->next, dh); fflush(stderr);
 	return dc;
 }
 
 static device_handle *get_device_handle_by_device(struct usb_device *dev)
 {
 	device_handle *dh = device_handles;
-//fprintf(stderr, "Getting handle by device %p\n",dev); fflush(stderr);
 	while(dh != NULL) {
-//fprintf(stderr, "dh (%p, %p, %p)\n", dh->device, dh->handle, dh->next);
 		if (dh->device == dev) {
 			break;
 		}
@@ -235,50 +232,14 @@ int handle_bus_address(struct usb_dev_handle *handle, u_int8_t *bus_id, u_int8_t
 	return (bus_id > 0 && device_id > 0);
 }
 
-static const char root_sys_class_usb_device[] = "/sys/class/usb_device";
 int handle_bus_port(struct usb_dev_handle *handle, char *bus_port)
 {
 	// Use sysfs (but beware of older versions) to get port number
 	
-	char devicepath[FILENAME_MAX - 1], testpath[FILENAME_MAX - 1];
 	u_int8_t bus_id, device_id;
 	handle_bus_address(handle, &bus_id, &device_id);
 	
-	sprintf(devicepath, "%s/usbdev%d.%d/device", root_sys_class_usb_device, bus_id, device_id);
-
-	sprintf(testpath, "%s/busnum", devicepath);
-	FILE *fbn = fopen(testpath,"r");
-	sprintf(testpath, "%s/devpath", devicepath);
-	FILE *fdp = fopen(testpath,"r");
-	if( fbn && fdp ) {
-		if (debug) fprintf(stderr, "device_bus_port: mode 1 - older sysfs\n");
-		// Ahh, good. Older, simple sysfs implementation.
-		char sysfs_busnum[4] = {};
-		fgets(sysfs_busnum, 4, fbn);
-		if (fbn) fclose(fbn);
-
-		char sysfs_devpath[32] = {};
-		fgets(sysfs_devpath, 32, fdp);
-		if (fdp) fclose(fdp);
-		
-		sprintf(bus_port, "%s-%s", sysfs_busnum, sysfs_devpath);
-	} 
-	else {
-		// Crud. "Modern" sysfs implementation, try the bodge method 1
-		char linkpath[FILENAME_MAX - 1];
-		if (readlink(devicepath, linkpath, FILENAME_MAX) > 0) {
-			if (debug) fprintf(stderr, "device_bus_port: mode 2 - transitional sysfs\n");
-			// take the last bit off the link target
-			char *bodge = basename(linkpath);
-			strncpy(bus_port, bodge, strlen(bodge));
-		}
-		// Sod it. Try every device for a match. Lame. Stupid. Lamer.
-		else {
-			// No way to get the values. Return the bus-address instead
-			if (debug) fprintf(stderr, "device_bus_port: mode 99 - no sysfs - lie\n");		
-			sprintf(bus_port, "%d-%d", bus_id, device_id);
-		}
-	}
+	sysfs_find_device_id(bus_id, device_id, bus_port);
 	
 	if (debug) fprintf(stderr, "device_bus_port: (%d, %d) => (%s) %p\n", bus_id, device_id, bus_port, bus_port);
 	return (1);
