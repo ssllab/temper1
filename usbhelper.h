@@ -1,5 +1,5 @@
 /*
- * usbhelper.c by Andrew Mannering (c) 2012 (andrewm@sledgehammersolutions.co.uk)
+ * usbhelper.h by Andrew Mannering (c) 2012 (andrewm@sledgehammersolutions.co.uk)
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

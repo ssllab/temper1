@@ -239,7 +239,7 @@ int handle_bus_port(struct usb_dev_handle *handle, char *bus_port)
 	u_int8_t bus_id, device_id;
 	handle_bus_address(handle, &bus_id, &device_id);
 	
-	sysfs_find_device_id(bus_id, device_id, bus_port);
+	sysfs_find_usb_device_name(bus_id, device_id, bus_port);
 	
 	if (debug) fprintf(stderr, "device_bus_port: (%d, %d) => (%s) %p\n", bus_id, device_id, bus_port, bus_port);
 	return (1);
