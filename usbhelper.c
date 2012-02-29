@@ -84,11 +84,7 @@ int iterate_usb(int (is_interesting)(struct usb_device *),
 					result += 1;
 				}
 			}
-		//	if (result > 0)
-		//		break;
 		}
-		if (result > 0)
-			break;
 	}
 	return result;
 }
