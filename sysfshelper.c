@@ -51,7 +51,7 @@ int sysfs_find_usb_device_name(const int busnum, const int devnum, char * const 
 	{
 		if ((strncmp(entry->d_name, ".", 1) == 0) || (strncmp(entry->d_name, "..", 2) == 0))
 			continue;
-		sprintf(busnum_part, "%i", busnum);
+		sprintf(busnum_part, "%i-", busnum);
 		sprintf(devnum_path, "%s/%s/devnum", root_sys_bus_usb_devices, entry->d_name);
 		if ((strncmp(entry->d_name, busnum_part, strlen(busnum_part)) == 0) && 
 				file_exists(devnum_path)) {
