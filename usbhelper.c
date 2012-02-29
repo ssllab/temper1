@@ -83,8 +83,8 @@ int iterate_usb(int (is_interesting)(struct usb_device *),
 					result += 1;
 				}
 			}
-			if (result > 0)
-				break;
+		//	if (result > 0)
+		//		break;
 		}
 		if (result > 0)
 			break;
@@ -99,7 +99,10 @@ static device_handle *add_device_handle(struct usb_device *dev, struct usb_dev_h
 	device_handle *dh = device_handles;
 	device_handle *dc = NULL;
 
-	while(dh != NULL && (dh = (device_handle *)dh->next));
+	if (dh) {
+		while (dh->next)
+			dh = (device_handle *)dh->next;
+	}
 	
 	dc = (device_handle *)malloc(sizeof(device_handle));
 	dc->device = dev;
@@ -108,21 +111,24 @@ static device_handle *add_device_handle(struct usb_device *dev, struct usb_dev_h
 
 	if (dh == NULL) device_handles = dh = dc;
 	else dh->next = (device_handle *)dc;
-	
+//fprintf(stderr, "Added device struct (%p, %p) = %p\n", dev, handle, dc); fflush(stderr);
+//fprintf(stderr, "Updated device struct (%p, %p, %p) = %p\n", dh->device, dh->handle, dh->next, dh); fflush(stderr);
 	return dc;
 }
 
 static device_handle *get_device_handle_by_device(struct usb_device *dev)
 {
 	device_handle *dh = device_handles;
-
+//fprintf(stderr, "Getting handle by device %p\n",dev); fflush(stderr);
 	while(dh != NULL) {
+//fprintf(stderr, "dh (%p, %p, %p)\n", dh->device, dh->handle, dh->next);
 		if (dh->device == dev) {
 			break;
 		}
 		dh = (device_handle *)dh->next;
 	}
 
+//fprintf(stderr, "Returning handle struct %p by device %p\n", dh, dev); fflush(stderr);
 	return dh;
 }
 
@@ -133,7 +139,7 @@ static struct usb_dev_handle *open_handle_for_device(struct usb_device *dev,
 	struct usb_dev_handle *handle;
 	int r;
 
-	if (!dh)	{
+	if (!dh) {
 		handle = usb_open(dev);
 		if (do_open) 
 			r = do_open(handle);
@@ -157,7 +163,8 @@ static int close_handle(struct usb_dev_handle *handle,
 
 int device_vendor_product_is(struct usb_device *device, u_int16_t vendor, u_int16_t product)
 {
-	return (device->descriptor.idVendor == vendor && device->descriptor.idProduct == product);
+	int r = (device->descriptor.idVendor == vendor && device->descriptor.idProduct == product);
+	return r;
 }
 
 int detach_driver(struct usb_dev_handle *handle, int interface_number)
@@ -244,8 +251,8 @@ int handle_bus_port(struct usb_dev_handle *handle, char *bus_port)
 	sprintf(testpath, "%s/devpath", devicepath);
 	FILE *fdp = fopen(testpath,"r");
 	if( fbn && fdp ) {
-		if (debug) fprintf(stderr, "device_bus_port: mode 1 - modern sysfs\n");
-		// Ahh, good. Modern sysfs implementation, so do this properly.
+		if (debug) fprintf(stderr, "device_bus_port: mode 1 - older sysfs\n");
+		// Ahh, good. Older, simple sysfs implementation.
 		char sysfs_busnum[4] = {};
 		fgets(sysfs_busnum, 4, fbn);
 		if (fbn) fclose(fbn);
@@ -257,14 +264,15 @@ int handle_bus_port(struct usb_dev_handle *handle, char *bus_port)
 		sprintf(bus_port, "%s-%s", sysfs_busnum, sysfs_devpath);
 	} 
 	else {
-		// Crud. Probably lame old sysfs implementation, try the bodge method
+		// Crud. "Modern" sysfs implementation, try the bodge method 1
 		char linkpath[FILENAME_MAX - 1];
 		if (readlink(devicepath, linkpath, FILENAME_MAX) > 0) {
-			if (debug) fprintf(stderr, "device_bus_port: mode 2 - elderly sysfs\n");
+			if (debug) fprintf(stderr, "device_bus_port: mode 2 - transitional sysfs\n");
 			// take the last bit off the link target
 			char *bodge = basename(linkpath);
 			strncpy(bus_port, bodge, strlen(bodge));
 		}
+		// Sod it. Try every device for a match. Lame. Stupid. Lamer.
 		else {
 			// No way to get the values. Return the bus-address instead
 			if (debug) fprintf(stderr, "device_bus_port: mode 99 - no sysfs - lie\n");		
