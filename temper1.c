@@ -191,8 +191,8 @@ static void output_data(char *busport, char *data)
 		}
 	}
 
-	fprintf(fp, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
-//	fprintf(fp, "%s,%f\n", dt, t) ;
+//	fprintf(fp, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
+	fprintf(fp, "%ld,%f,%s\n", tm, t, busport) ;
 	fflush(fp);
 	if (fp != stdout) 
 		fclose(fp);
