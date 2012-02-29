@@ -43,16 +43,25 @@ int sysfs_find_usb_device_name(const int busnum, const int devnum, char * const 
  
 	dp = opendir(root_sys_bus_usb_devices);
 	if (dp == NULL) {
-		perror("opendir");
+		perror("Failed to open sysfs direcory");
 		return -1;
 	}
  
+	// From 2.6.22, the nice simple symlinks from /sys/class/usb_device/usbdev{bus}.{dev}
+	// are no longer created. Probably too old fashioned for someone, so we have no 
+	// portable choice but to iterate _every_ usb device and ask what it's device number
+	// is. Not a step forward from the sysfs/kernel maintainers. Can be emulated with a
+	// udev rule, but that is another hoop to jump through.
+	// http://cateee.net/lkddb/web-lkddb/USB_DEVICE_CLASS.html
 	while((entry = readdir(dp))) 
 	{
 		if ((strncmp(entry->d_name, ".", 1) == 0) || (strncmp(entry->d_name, "..", 2) == 0))
 			continue;
 		sprintf(busnum_part, "%i-", busnum);
 		sprintf(devnum_path, "%s/%s/devnum", root_sys_bus_usb_devices, entry->d_name);
+		// Modern kernels have a busnum file in the device directory, but not older
+		// ones like RHEL5, so we have to infer it by testing the first part of the 
+		// directory name.
 		if ((strncmp(entry->d_name, busnum_part, strlen(busnum_part)) == 0) && 
 				file_exists(devnum_path)) {
 			
