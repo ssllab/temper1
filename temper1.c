@@ -28,6 +28,7 @@
 #include <time.h>
 
 #include "usbhelper.h"
+#include "strreplace.h"
 
 #define VERSION "0.1"
 
@@ -37,23 +38,27 @@
 #define INTERFACE1 1
 
 // Forward declarations
+static void load_configuration();
 static void load_calibrations();
 static int is_device_temper1(struct usb_device *device);
 static int initialise_temper1(struct usb_dev_handle *handle);
 static int use_temper1(struct usb_dev_handle *handle);
-static int read_temper1(struct usb_dev_handle *handle, char *data);
+static int read_temper1(struct usb_dev_handle *handle, char *data, int datalen);
 static int close_temper1(struct usb_dev_handle *handle);
 
-static float raw_to_c(char *busport, char *data);
+static void parse_units(char *arg);
+static int decode_raw_data(char *data);
+static float raw_to_c(char *busport, int rawtemp);
 static float c_to_u(float deg_c, char unit);
 
 typedef struct options {
 	int verbose;
 	int daemon;
-	char *output_file;
-	char *config_file;
+	char output_file[FILENAME_MAX];
+	char config_file[FILENAME_MAX];
 	char units;
-	char *format;
+	char dt_format[100];
+	char only_device[40];
 } options;
 
 options opts;
@@ -63,31 +68,44 @@ int main(int argc, char *argv[])
 {
 	opts.verbose = FALSE;
 	opts.daemon = FALSE;
-	opts.output_file = "stdout";
-	opts.config_file = "temper1.conf";
+	bzero(opts.output_file, FILENAME_MAX);
+	strcpy(opts.config_file, "temper1.conf");
 	opts.units = 'C';
-	opts.format = "%d-%b-%Y %H:%M";
+	strcpy(opts.dt_format, "%d-%b-%Y %H:%M");
+	bzero(opts.only_device, 40);
 	
 	static struct option long_options[] =
 	 {
 	   {"help", no_argument,          0, 'h'},
 	   {"version", no_argument,       0, 'V'},
 	   {"verbose", no_argument,       0, 'v'},
-	   {"daemon",  required_argument, 0, 'd'},
-	   {"output",  required_argument, 0, 'o'},
+	   {"daemon",  required_argument, 0, 'D'},
 	   {"config",  required_argument, 0, 'C'},
+	   {"output",  required_argument, 0, 'o'},
 	   {"units",   required_argument, 0, 'u'},
-	   {"timestamp",  required_argument, 0, 't'},
-	   {"calibration", required_argument, 0, 'c' },
+	   {"device",  required_argument, 0, 'd'},
 	   {0, 0, 0, 0}
 	 };
 	int options_index = 0, c = 0, proceed = TRUE;
 	
-	while ((c = getopt_long(argc, argv, "hVvd:o:C:u:t:c", long_options, &options_index)) != -1) 
+	while ((c = getopt_long(argc, argv, "C:", long_options, &options_index)) != -1) 
+	{
+		switch (c) {
+			case 'C':
+				strcpy(opts.config_file, optarg);
+				break;
+		}
+	}
+	load_configuration();
+	
+	optind = 1;
+	while ((c = getopt_long(argc, argv, "hVvd:u:C:", long_options, &options_index)) != -1) 
 	{
 		switch (c) {
 			case 'h':
-				// TODO
+				fprintf(stdout, "usage: temper1 [--version|-v] [--help|-h] [--daemon|-D [seconds]]\n");
+				fprintf(stdout, "               [--verbose|-V] [--config|-C [file]] [--output|-o [file]]\n");
+				fprintf(stdout, "               [--units|-u [C|F|K]] [--device|-d [bus_no-port_no]]\n");
 				proceed = FALSE;
 				break;
 			case 'V':
@@ -97,29 +115,20 @@ int main(int argc, char *argv[])
 			case 'v':
 				opts.verbose = TRUE;
 				break;
-			case 'd':
+			case 'D':
 				opts.daemon = TRUE;
 				break;
+			case 'd':
+				strcpy(opts.only_device, optarg);
+				break;
 			case 'o':
+				strcpy(opts.output_file, optarg);
+				break;
+			case 'u': 
+				parse_units(optarg);
 				break;
 			case 'C':
-				opts.config_file = strcpy(opts.config_file, optarg);
-				break;
-			case 'u': {
-					int u;
-					char unit = toupper(optarg[0]);
-					char units[] = { 'C', 'F', 'K' };
-					for (u = 0; u < sizeof(units); u++) {
-						if (units[u] == unit) {
-							opts.units = units[u];
-							break;
-						}
-					}
-					break;
-				}
-			case 'c':
-				break;
-			case 't':
+				// Just ignore as we've done this already
 				break;
 			case '?':
 				proceed = FALSE;
@@ -129,8 +138,8 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	if (proceed) {
-		initialise_usb();
+	if (proceed) {	
+		initialise_usb(opts.verbose);
 		load_calibrations();
 		
 	/* // This is the one shot read
@@ -139,12 +148,26 @@ int main(int argc, char *argv[])
 	*/
 	
 		// These separate iterations allow for the use_temper1 to do loops over all devices (daemon mode)
-		iterate_usb(is_device_temper1, initialise_temper1, NULL, NULL);
-		iterate_usb(is_device_temper1, NULL, use_temper1, NULL);
-		iterate_usb(is_device_temper1, NULL, NULL, close_temper1);
+		// by simply using a different use_temper1 method pointer.
+		int r = iterate_usb(is_device_temper1, initialise_temper1, NULL, NULL);
+		if (r >= 0) r = iterate_usb(is_device_temper1, NULL, use_temper1, NULL);
+		if (r >= 0) r = iterate_usb(is_device_temper1, NULL, NULL, close_temper1);
 	}
 	
 	return (!proceed);
+}
+
+static void parse_units(char *arg)
+{
+	int u;
+	char unit = toupper(arg[0]);
+	char units[] = { 'C', 'F', 'K' };
+	for (u = 0; u < sizeof(units); u++) {
+		if (units[u] == unit) {
+			opts.units = units[u];
+			break;
+		}
+	}
 }
 
 // Worker methods
@@ -156,13 +179,23 @@ static void output_data(char *busport, char *data)
 	utc = gmtime(&tm);
 	
 	char dt[80];
-	strftime(dt, 80, "%d-%b-%Y %H:%M", utc);
+	strftime(dt, 80, opts.dt_format, utc);
 
-	float t = c_to_u(raw_to_c(busport, data), opts.units);
+	float t = c_to_u(raw_to_c(busport, decode_raw_data(data)), opts.units);
 
-	fprintf(stdout, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
-//	fprintf(stdout, "%s,%f\n", dt, t);
-	fflush(stdout);
+	FILE *fp = stdout;
+	if (strlen(opts.output_file) > 0) {
+		if (!(fp = fopen(opts.output_file, "w+"))) {
+			fprintf(stderr, "Unable to open %s for appending\n", opts.output_file);
+			fp = stdout;
+		}
+	}
+
+//	fprintf(fp, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
+	fprintf(fp, "%s,%f\n", dt, t) ;
+	fflush(fp);
+	if (fp != stdout) 
+		fclose(fp);
 }
 
 static int is_device_temper1(struct usb_device *device)
@@ -172,47 +205,134 @@ static int is_device_temper1(struct usb_device *device)
 
 static int use_temper1(struct usb_dev_handle *handle)
 {
-	int r;
+	int r, do_read = TRUE;
 	char data[8];
 	char busport[100] = {};
-	
-	r = handle_bus_port(handle, &busport);
-	printf("Retrieved: %s %p\n", busport, busport);
+		
+	r = handle_bus_port(handle, busport);
 
-	r = read_temper1(handle, data);
-	if (r >= 0) 
-		output_data(busport, data);
+	if (strlen(opts.only_device) > 0) {
+		do_read = (strcmp(busport, opts.only_device) == 0);
+	}
 	
+	if (do_read) {
+		int passes = 0;
+		do 
+		{
+			bzero(data, 8);
+			r = read_temper1(handle, data, 8);
+			if (r >= 0) {
+				if (decode_raw_data(data) > 0) { 
+					output_data(busport, data);
+				}
+				else {
+					if (opts.verbose) fprintf(stderr, "Pass %i read returned 0 value (r = %i)\n", passes, r);
+					r = -1;
+				}
+			}
+			else {
+				if (opts.verbose) fprintf(stderr, "use_temper1: read_temper1 returned (r = %i)\n", r);
+				break;
+			}
+			passes++;
+		}
+		while (decode_raw_data(data) == 0 && passes < 5 && r >= 0);
+	}
+		
 	return r;
 }
 
+static void load_configuration()
+{
+	FILE *fp = fopen(opts.config_file, "r");
+	if (fp) {
+		char line[100];
+		while (fgets(line, sizeof(line), fp) != NULL)
+		{
+			if (strstr(line, "OUTPUT\t") == line) {
+			}
+			else if (strstr(line, "FORMAT\t") == line) {
+			}
+			else if (strstr(line, "DATETIME\t") == line) {
+			}
+		}
+		fclose(fp);
+	}	
+}
 
 typedef struct temper1_calibration {
 	char *port_descriptor;
 	float scale;
 	float offset;
 } temper1_calibration;
-temper1_calibration temper1_calibrations[127];
+static temper1_calibration temper1_calibrations[127] = {};
 
 static void load_calibrations() 
 {
-	// TODO
+	FILE *fp = fopen(opts.config_file, "r");
+	if (fp) {
+		char line[100];
+		while (fgets(line, sizeof(line), fp) != NULL)
+		{
+			if (strstr(line, "CALIBRATION\t") == line) {
+				char port[40] = {};
+				float scale, offset;
+				int s;
+				if ((s = sscanf(line, "CALIBRATION\t%s\t%f\t%f", port, &scale, &offset))) {
+					temper1_calibration cal;
+					
+					cal.port_descriptor = (char *)malloc(strlen(port));
+				
+					strncpy(cal.port_descriptor, port, strlen(port));
+					cal.scale = scale;
+					cal.offset = offset;	
+					
+					int i;
+					for (i = 0; temper1_calibrations[i].port_descriptor; i++);
+					temper1_calibrations[i] = cal;
+					
+					if (opts.verbose) fprintf(stderr, "Loaded calibration (%s): scale: %f; offset %f\n", port, cal.scale, cal.offset);
+					
+				}
+			}
+		}
+		fclose(fp);
+	}	
 }
 
-// Todo: find way to identify device, and then apply specific calibration variables
-// Poss: use udev to catch change of device, and write virtual address (which we can get at in libusb)
-//       to a file indexed by physical address from udev. Can then use a file to map physical
-//	     port to calibration values.
-/* Calibration adjustments */
-/* See http://www.pitt-pladdy.com/blog/_20110824-191017_0100_TEMPer_under_Linux_perl_with_Cacti/ */
-static float scale = 1.0287;
-static float offset = -0.85;
+static temper1_calibration get_calibration(char *busport)
+{
+	int i = 0;
+	for (i = 0; i < 128; i++) {
+		if (temper1_calibrations[i].port_descriptor != NULL && 
+			strcmp(temper1_calibrations[i].port_descriptor, busport) == 0) {
+			break;
+		}
+	} 
+		
+	return temper1_calibrations[i];
+} 
 
-static float raw_to_c(char *busport, char *data)
+static int decode_raw_data(char *data)
 {
 	unsigned int rawtemp = (data[3] & 0xFF) + (data[2] << 8);
+	if (opts.verbose) fprintf(stderr, 
+		"Raw temp: %d (%04X) [%02X %02X (%02X >> %02X)+(%02X >> %02X) %02X %02X %02X %02X]\n", rawtemp, rawtemp,
+		(unsigned)data[0] & 0xFF, (unsigned)data[1] & 0xFF, 
+		(unsigned)data[2] & 0xFF, (unsigned)(data[2] << 8) ,
+		(unsigned)data[3] & 0xFF, (unsigned)(data[3] & 0xFF), 
+		(unsigned)data[4] & 0xFF, (unsigned)data[5] & 0xFF, (unsigned)data[6] & 0xFF, (unsigned)data[7] & 0xFF);
+	return rawtemp;
+}
+
+/* Calibration adjustments */
+/* See http://www.pitt-pladdy.com/blog/_20110824-191017_0100_TEMPer_under_Linux_perl_with_Cacti/ */
+static float raw_to_c(char *busport, int rawtemp)
+{
 	float temp_c = rawtemp * (125.0 / 32000.0);
-	temp_c = (temp_c * scale) + offset;
+	
+	temper1_calibration cal = get_calibration(busport);
+	temp_c = (temp_c * cal.scale) + cal.offset;
 	return temp_c;
 }
 
@@ -242,23 +362,27 @@ static int initialise_temper1(struct usb_dev_handle *handle)
 		claim_interface(handle, INTERFACE0);
 	if (r >= 0) r = 
 		claim_interface(handle, INTERFACE1);
+/*
+	// In light of discovery that the HID implementation has a keyboard emulation
+	// and a vendor specific mode, don't touch anything else. No init needed?
 	if (r >= 0) r = 
 		control_message(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, 
 			0, cq_initialise, sizeof(cq_initialise));
 		
+*/
 	return r;
 }
 
 #define READ_ENDPOINT 0x82
 const static char cq_temperature[] = { 0x01, 0x80, 0x33, 0x01, 0x00, 0x00, 0x00, 0x00 };
 
-static int read_temper1(struct usb_dev_handle *handle, char *data)
+static int read_temper1(struct usb_dev_handle *handle, char *data, int datalen)
 {
 	int r = 
 		control_message(handle, CTRL_REQ_TYPE, CTRL_REQ, CTRL_VALUE, 
 			1, cq_temperature, sizeof(cq_temperature));
 	if (r >= 0) r = 
-		interrupt_read(handle, READ_ENDPOINT, data, sizeof(data));
+		interrupt_read(handle, READ_ENDPOINT, data, datalen);
 	
 	return r;
 }
