@@ -42,6 +42,9 @@ static int usb_return(int retcode, char *info)
 	if (retcode < 0) {
 		error(info, retcode);
 	}
+	else {
+		if (debug) fprintf(stderr, "Clean return from %s\n", info);
+	}
 	return retcode;
 }
 
@@ -150,6 +153,7 @@ static int close_handle(struct usb_dev_handle *handle,
 	if (do_close) {
 		r = do_close(handle);
 		usb_close(handle);
+		usb_return(1, "usb_close (fake void)");
 	}
 	return r;
 }
