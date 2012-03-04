@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
 	 };
 	int options_index = 0, c = 0, proceed = TRUE;
 	
-	while ((c = getopt_long(argc, argv, "C:", long_options, &options_index)) != -1) 
+	while ((c = getopt_long(argc, argv, "hVvD:C:o:u:d:", long_options, &options_index)) != -1) 
 	{
 		switch (c) {
 			case 'C':
@@ -99,12 +99,12 @@ int main(int argc, char *argv[])
 	load_configuration();
 	
 	optind = 1;
-	while ((c = getopt_long(argc, argv, "hVvd:u:C:", long_options, &options_index)) != -1) 
+	while ((c = getopt_long(argc, argv, "hVvD:C:o:u:d:", long_options, &options_index)) != -1) 
 	{
 		switch (c) {
 			case 'h':
-				fprintf(stdout, "usage: temper1 [--version|-v] [--help|-h] [--daemon|-D [seconds]]\n");
-				fprintf(stdout, "               [--verbose|-V] [--config|-C [file]] [--output|-o [file]]\n");
+				fprintf(stdout, "usage: temper1 [--version|-V] [--help|-h] [--daemon|-D [seconds]]\n");
+				fprintf(stdout, "               [--verbose|-v] [--config|-C [file]] [--output|-o [file]]\n");
 				fprintf(stdout, "               [--units|-u [C|F|K]] [--device|-d [bus_no-port_no]]\n");
 				proceed = FALSE;
 				break;
@@ -142,16 +142,19 @@ int main(int argc, char *argv[])
 		initialise_usb(opts.verbose);
 		load_calibrations();
 		
-	/* // This is the one shot read
-		iterate_usb(is_device_temper1, 
-					initialise_temper1, use_temper1, close_temper1);
-	*/
-	
-		// These separate iterations allow for the use_temper1 to do loops over all devices (daemon mode)
-		// by simply using a different use_temper1 method pointer.
-		int r = iterate_usb(is_device_temper1, initialise_temper1, NULL, NULL);
-		if (r >= 0) r = iterate_usb(is_device_temper1, NULL, use_temper1, NULL);
-		if (r >= 0) r = iterate_usb(is_device_temper1, NULL, NULL, close_temper1);
+		if (!opts.daemon) {
+			// This is the one shot read
+			iterate_usb(is_device_temper1, 
+						initialise_temper1, use_temper1, close_temper1);
+		}
+		else {
+			// These separate iterations allow for the use_temper1 to do loops over all devices (daemon mode)
+			// by simply using a different use_temper1 method pointer.
+			int r = iterate_usb(is_device_temper1, initialise_temper1, NULL, NULL);
+			if (r >= 0) r = iterate_usb(is_device_temper1, NULL, use_temper1, NULL);
+			// TODO install signal handler to run this
+			if (r >= 0) r = iterate_usb(is_device_temper1, NULL, NULL, close_temper1);
+		}
 	}
 	
 	return (!proceed);
@@ -216,27 +219,20 @@ static int use_temper1(struct usb_dev_handle *handle)
 	}
 	
 	if (do_read) {
-		int passes = 0;
-		do 
-		{
-			bzero(data, 8);
-			r = read_temper1(handle, data, 8);
-			if (r >= 0) {
-				if (decode_raw_data(data) > 0) { 
-					output_data(busport, data);
-				}
-				else {
-					if (opts.verbose) fprintf(stderr, "Pass %i read returned 0 value (r = %i)\n", passes, r);
-					r = -1;
-				}
+		bzero(data, 8);
+		r = read_temper1(handle, data, 8);
+		if (r >= 0) {
+			if (decode_raw_data(data) > 0) { 
+				output_data(busport, data);
 			}
 			else {
-				if (opts.verbose) fprintf(stderr, "use_temper1: read_temper1 returned (r = %i)\n", r);
-				break;
+				if (opts.verbose) fprintf(stderr, "Read returned 0 value (r = %i)\n", r);
+				r = -1;
 			}
-			passes++;
 		}
-		while (decode_raw_data(data) == 0 && passes < 5 && r >= 0);
+		else {
+			if (opts.verbose) fprintf(stderr, "use_temper1: read_temper1 returned (r = %i)\n", r);
+		}
 	}
 		
 	return r;
