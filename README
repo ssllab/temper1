@@ -1,4 +1,4 @@
-temper1 -enhanced command line utility for TEMPer1 on Linux 
+temper1 - enhanced command line utility for TEMPer1 on Linux 
 Sledgehammer Solutions Limited
 
 https://github.com/ssllab/temper1
@@ -10,12 +10,12 @@ This utility is a rewrite of the basic utility
   https://github.com/ssllab/temper
 
 Improvements from the basic utility
-- Multiple devices support
-- Configuration file for per-device calibrations
-- Unit selection
+- Multiple devices support (all devices or specific device)
+- Configuration file for per-port calibration
+- Unit selection (C, F, K)
 
 Planned features:
-- Deamon mode with timed sample intervals
+- Daemon mode with timed sample intervals
 - Configurable output format
 
 
