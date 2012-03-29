@@ -1,0 +1,27 @@
+temperÂ1 -enhanced command line utility for TEMPer1 on Linux 
+Sledgehammer Solutions Limited
+
+https://github.com/ssllab/temper1
+
+For more information on SSL's work on the TEMPer1 devices on OS X
+and Linux visit http://ssl-lab.blogspot.com/
+
+This utility is a rewrite of the basic utility
+  https://github.com/ssllab/temper
+
+Improvements from the basic utility
+- Multiple devices support
+- Configuration file for per-device calibrations
+- Unit selection
+
+Planned features:
+- Deamon mode with timed sample intervals
+- Configurable output format
+
+
+Installation information to be added.
+
+
+(c) 2012 Sledgehammer Solutions Limited
+
+
