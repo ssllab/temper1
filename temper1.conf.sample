@@ -1,0 +1,10 @@
+# Configuration file for temper1
+#
+# Calibrations can be applied to specific devices
+# For details on method to determine values see 
+# http://www.pitt-pladdy.com/blog/_20110824-191017_0100_TEMPer_under_Linux_perl_with_Cacti/ 
+#
+# CALIBRATION	[usb address]	[scale]	[offset]
+#
+#CALIBRATION	1-1.2	1.038	-0.129
+#CALIBRATION	1-1.3	1.017	0.042

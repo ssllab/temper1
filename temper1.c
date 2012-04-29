@@ -194,8 +194,12 @@ static void output_data(char *busport, char *data)
 		}
 	}
 
-//	fprintf(fp, "(%ld) %s,%s,%f\n", tm, dt, busport, t);
+// Uncomment this line to use the opts.dt_format output 
+//	fprintf(fp, "%s,%s,%f\n", dt, busport, t);
+// Otherwise we default to outputing a timestamp in seconds as this is easier
+// to use in JQuery/Javascript and Oracle 
 	fprintf(fp, "%ld,%f,%s\n", tm, t, busport) ;
+
 	fflush(fp);
 	if (fp != stdout) 
 		fclose(fp);

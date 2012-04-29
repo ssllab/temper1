@@ -18,8 +18,24 @@ Planned features:
 - Daemon mode with timed sample intervals
 - Configurable output format
 
+A sample configuration file is provided and may be used to
+calibrate the devices. Running temper1 is best done from a
+script called by cron. A sample script (get_temps.sh) is 
+given to show how to call temper1 and using the USB bus id
+to split the output to seperate files.
 
-Installation information to be added.
+To run temper1 as a non-root user, you will need to add some
+udev rules:
+
+1. Add the udev rule set in /etc/udev/rules.d/ using the 60-temper.rules 
+2. Add a 'temper' group (using groupadd or edit the /etc/group file)
+3. Add users to the 'temper' group
+4. Reload the udev rules:
+    udevcontrol reload_rules
+    (if that command doesn't exists then you will need to restart
+     udev using the supported method for your distribution, or
+     simply reboot)
+5. Unplug and replug the TEMPer1 device
 
 
 (c) 2012 Sledgehammer Solutions Limited
