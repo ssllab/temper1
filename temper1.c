@@ -322,6 +322,18 @@ static int decode_raw_data(char *data)
 		(unsigned)data[2] & 0xFF, (unsigned)(data[2] << 8) ,
 		(unsigned)data[3] & 0xFF, (unsigned)(data[3] & 0xFF), 
 		(unsigned)data[4] & 0xFF, (unsigned)data[5] & 0xFF, (unsigned)data[6] & 0xFF, (unsigned)data[7] & 0xFF);
+    
+	/* msb means the temperature is negative -- less than 0 Celsius -- and in 2'complement form.
+ 	 * We can't be sure that the host uses 2's complement to store negative numbers
+ 	 * so if the temperature is negative, we 'manually' get its magnitude
+ 	 * by explicity getting it's 2's complement and then we return the negative of that.
+ 	 */
+    
+	if ((data[2] & 0x80) != 0) {
+		/* return the negative of magnitude of the temperature */
+		rawtemp = -((rawtemp ^ 0xffff) + 1);
+	}
+    
 	return rawtemp;
 }
 
