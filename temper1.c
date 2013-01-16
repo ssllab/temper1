@@ -225,8 +225,8 @@ static int use_temper1(struct usb_dev_handle *handle)
 	if (do_read) {
 		bzero(data, 8);
 		r = read_temper1(handle, data, 8);
-		if (r >= 0) {
-			if (decode_raw_data(data) > 0) { 
+		if (r != 0) {
+			if (decode_raw_data(data) != 0) { 
 				output_data(busport, data);
 			}
 			else {
